@@ -45,12 +45,12 @@ def go(arg):
         LABEL.build_vocab(train)
 
         train_iter, test_iter = data.BucketIterator.splits((train, test), batch_size=arg.batch_size, device=util.d())
-
+    print("hello world")
     print(f'- nr. of training examples {len(train_iter)}')
     print(f'- nr. of {"test" if arg.final else "validation"} examples {len(test_iter)}')
 
     if arg.max_length < 0:
-        mx = max([input.text[0].size(1) for input in train_iter])
+        mx = np.max([input.text[0].size(1) for input in train_iter])
         mx = mx * 2
         print(f'- maximum sequence length: {mx}')
     else:
@@ -125,7 +125,7 @@ if __name__ == "__main__":
     parser.add_argument("-e", "--num-epochs",
                         dest="num_epochs",
                         help="Number of epochs.",
-                        default=80, type=int)
+                        default=10, type=int)
 
     parser.add_argument("-b", "--batch-size",
                         dest="batch_size",
