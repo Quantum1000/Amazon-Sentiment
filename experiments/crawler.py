@@ -1,6 +1,5 @@
 from selenium import webdriver as wd
 from selenium.webdriver.common.keys import Keys
-import pandas as pd
 import random
 import pickle
 from bs4 import BeautifulSoup as bs
@@ -8,11 +7,11 @@ import time
 
 LETTER = ['e', 't', '.']
 
-EN = {'SITE':'https://www.amazon.com', 'SEARCH1':'/s?k=', 'SEARCH2':'&s=review-count-rank&qid=1574406847'}
-JP = {'SITE':'https://www.amazon.co.jp', 'SEARCH1':'/s?k=', 'SEARCH2':'&s=review-count-rank&qid=1574406847'}
-DE = {'SITE':'https://www.amazon.de', 'SEARCH1':'/s?k=', 'SEARCH2':'&s=review-count-rank&__mk_de_DE=ÅMÅŽÕÑ&qid=1574406226'}
-TR = {'SITE':'https://www.amazon.com.tr', 'SEARCH1':'/s?k=', 'SEARCH2':'&s=review-count-rank&__mk_tr_TR=ÅMÅŽÕÑ&qid=1574426157'}
-LANGS = {'EN':EN, 'JP':JP, 'DE':DE, 'TR':TR}
+EN = {'SITE':'https://www.amazon.com', 'SEARCH1':'/s?k=', 'SEARCH2':'&s=review-count-rank'}
+JP = {'SITE':'https://www.amazon.co.jp', 'SEARCH1':'/s?k=', 'SEARCH2':'&s=review-count-rank'}
+DE = {'SITE':'https://www.amazon.de', 'SEARCH1':'/s?k=', 'SEARCH2':'&s=review-count-rank&__mk_de_DE=ÅMÅŽÕÑ&'}
+TR = {'SITE':'https://www.amazon.com.tr', 'SEARCH1':'/s?k=', 'SEARCH2':'&s=review-count-rank&__mk_tr_TR=ÅMÅŽÕÑ'}
+LANGS = {'EN':EN, 'JA':JP, 'DE':DE, 'TR':TR} # , 
 options = wd.ChromeOptions()
 # Parameters:
 RvPL = 50000 # Reviews per Language
@@ -26,6 +25,22 @@ for lang in LANGS:
     SITE = LANGS[lang]['SITE']
     SEARCH1 = LANGS[lang]['SEARCH1']
     SEARCH2 = LANGS[lang]['SEARCH2']
+    # Start from previous data, if it exists.
+    allreviews = []
+    prodlist = []
+    try:
+        fppl = open('prodlist' + lang + '.pkl', "rb")
+        fpr = open('reviews' + lang + '.pkl', "rb")
+    except FileNotFoundError:
+        print('No existing review data, starting new.')
+    else:
+        prodlist = pickle.load(fppl)
+        allreviews = pickle.load(fpr)
+        print('Loaded ' + str(len(allreviews)) + ' reviews from saved review data.')
+    savedreviews = len(allreviews)
+    ltri = 0
+    if(len(allreviews) > RvPL):
+        continue
     driver.get(SITE + SEARCH1 + LETTER[0] + SEARCH2)
     content = driver.page_source
     soup = bs(content, 'lxml')
@@ -37,24 +52,14 @@ for lang in LANGS:
         captchabox = driver.find_element_by_id('captchacharacters')
         captchabox.send_keys(input("captcha.html saved. Please read and enter captcha: "))
         captchabox.send_keys(Keys.RETURN)
-    allreviews = []
-    prodlist = []
     fppl = 0
     fpr = 0
-    # Start from previous data, if it exists.
-    try:
-        fppl = open('prodlist' + lang + '.pkl', "rb")
-        fpr = open('reviews' + lang + '.pkl', "rb")
-    except FileNotFoundError:
-        print('No existing review data, starting new.')
-    else:
-        prodlist = pickle.load(fppl)
-        allreviews = pickle.load(fpr)
-    savedreviews = len(allreviews)
-    for ltr in LETTER:
+    while len(allreviews) < RvPL:
         i = 1
-        if len(allreviews) > RvPL:
+        ltr = LETTER[ltri % len(LETTER)]
+        if ltri == 3:
             break
+        ltri += 1
 
         # Loops once for each results page. It would probably be better to limit the number of products per search than result pages, but w/e
         while len(allreviews) < RvPL and i < 60:
@@ -65,6 +70,8 @@ for lang in LANGS:
             print('Started page #' + str(i) + ' for search term "' + ltr + '" and language "' + lang + '". Gathered ' + str(len(allreviews)) + ' reviews.')
             i += 1
             for product in soup.findAll('span', {"cel_widget_id":"SEARCH_RESULTS-SEARCH_RESULTS"}, True):
+                if len(allreviews) > RvPL:
+                    break
                 # Check for and ignore sponsored results, as they could affect the data.
                 sponsoredtest = product.find('div', {'data-component-type':'sp-sponsored-result'})
                 if not sponsoredtest is None:
@@ -138,18 +145,18 @@ for lang in LANGS:
                     allreviews.extend(random.sample(prodreviews, RvPP))
                 else:
                     allreviews.extend(prodreviews)
-            # Saves gathered data in case of crash. Since this runs only at the end of each results page, it shouldn't take up too much time.
-            # Need to check if there's anything to save. Empty results pages process fast, overwriting could take a while.
-            if len(allreviews) > savedreviews + 500:
-                savedreviews = len(allreviews)
-                print('Saving progress...')
-                with open('prodlist' + lang + '.pkl', "wb") as fp:
-                    pickle.dump(prodlist, fp)
-                    fp.close()
-                with open('reviews' + lang + '.pkl', "wb") as fp:
-                    pickle.dump(allreviews, fp)
-                    fp.close()
-                print('Done saving!')
+                print(len(allreviews))
+                # Need to check if there's anything to save. Empty results pages process fast, overwriting could take a while.
+                if len(allreviews) > savedreviews + 500:
+                    savedreviews = len(allreviews)
+                    print('Saving progress...')
+                    with open('prodlist' + lang + '.pkl', "wb") as fp:
+                        pickle.dump(prodlist, fp)
+                        fp.close()
+                    with open('reviews' + lang + '.pkl', "wb") as fp:
+                        pickle.dump(allreviews, fp)
+                        fp.close()
+                    print('Done saving!')
     if len(allreviews) > savedreviews:
         savedreviews = len(allreviews)
         print('Saving final progress...')

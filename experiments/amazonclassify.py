@@ -26,50 +26,38 @@ from torch.utils.tensorboard import SummaryWriter
 import random, tqdm, sys, math, gzip
 # Classify, but for scraped amazon data.
 
+
 LOG2E = math.log2(math.e)
-LANGS = ['EN', 'JP', 'TR', 'DE']
+# JP is waiting on UNIDIC installation :P This is predicted to take far to long.... HELP
+# I can't even get fugashi set up, and that's required too!
+# Suddenly Japanese() is working, despite the fact I have none of the dependencies?
+# Whatever, roll with it.
+LANGS = ['JA']# 'TR', 'EN', 'DE'
 # Consider making the title body seperator, <body>, a distinct token.
 # Or don't, I guess, the AI should be able to figure it out on it's own.
-def tokenizeEN(x):
-    nlp = English()
+def metatokenize(x,  nlp):
     doc = nlp(x)
     out = []
     for t in doc:
         out.append(t.text)
     return out
-def tokenizeJP(x):
-    nlp = Turkish()
-    doc = nlp(x)
-    out = []
-    for t in doc:
-        out.append(t.text)
-    return out
-def tokenizeTR(x):
-    nlp = Japanese()
-    doc = nlp(x)
-    out = []
-    for t in doc:
-        out.append(t.text)
-    return out
-def tokenizeDE(x):
-    nlp = German()
-    doc = nlp(x)
-    out = []
-    for t in doc:
-        out.append(t.text)
-    return out
-tokenize = {'EN':tokenizeEN, 'JP':tokenizeJP, 'DE':tokenizeDE, 'TR':tokenizeTR}
+tokenizer = {'EN':English, 'JA':Japanese, 'DE':German, 'TR':Turkish}
+nlp = English()
+def tok(x):
+    return metatokenize(x, nlp)
 
-NUM_CLS = 5
+
+NUM_CLS = 2
 def go(arg, lang):
     # Used for converting between nats and bits
-    TEXT = data.Field(lower=True, include_lengths=True, batch_first=True, tokenize=tokenize[lang])
+    nlp = tokenizer[lang]()
+    TEXT = data.Field(lower=True, include_lengths=True, batch_first=True, tokenize=lambda x: metatokenize(x, nlp))
     LABEL = data.Field(sequential=False)
     """
     Creates and trains a basic transformer for the IMDB sentiment classification task.
     """
     tbw = SummaryWriter(log_dir=arg.tb_dir) # Tensorboard logging
-    
+
     # load the amazon reviews
     if arg.final:
         tdata = data.TabularDataset("reviews" + lang + ".json", "JSON", fields = {"rating": ("label", LABEL), "review": ("text", TEXT)})
@@ -86,8 +74,6 @@ def go(arg, lang):
         TEXT.build_vocab(train, max_size=arg.vocab_size - 2) # - 2 to make space for <unk> and <pad>
         LABEL.build_vocab(train)
         train_iter, test_iter = data.BucketIterator.splits((train, test), batch_size=arg.batch_size, device=util.d(), sort_key=lambda x: len(x.text), sort_within_batch=False)
-    print(test_iter)
-    print("hello world")
     print(f'- nr. of training examples {len(train_iter)}')
     print(f'- nr. of {"test" if arg.final else "validation"} examples {len(test_iter)}')
 
@@ -111,6 +97,7 @@ def go(arg, lang):
 
         print(f'\n epoch {e}')
         model.train(True)
+        tot, cor= 0.0, 0.0
 
         for batch in tqdm.tqdm(train_iter):
 
@@ -129,13 +116,17 @@ def go(arg, lang):
             # - If the total gradient vector has a length > 1, we clip it back down to 1.
             if arg.gradient_clipping > 0.0:
                 nn.utils.clip_grad_norm_(model.parameters(), arg.gradient_clipping)
-
+            
+            tot += float(input.size(0))
+            cor += float((label == out.argmax(dim=1)).sum().item())
             opt.step()
             sch.step()
 
             seen += input.size(0)
             tbw.add_scalar('classification/train-loss', float(loss.item()), seen)
         
+        trainacc = cor / tot
+
         with torch.no_grad():
 
             model.train(False)
@@ -154,11 +145,16 @@ def go(arg, lang):
                 cor += float((label == out).sum().item())
 
             acc = cor / tot
+            print(f'-- train accuracy {trainacc:.3}')
             print(f'-- {"test" if arg.final else "validation"} accuracy {acc:.3}')
             tbw.add_scalar('classification/test-loss', float(loss.item()), e)
-    
+            if (1-acc) / (1-trainacc) > 1.3:
+                print('Model is overfitting! Training has been ended.')
+                break
+            if acc >= 0.9:
+                break
     with open('model' + lang + '.pkl', "wb") as fp:
-        pickle.dump([model, TEXT], fp)
+        pickle.dump([model, 0, TEXT.vocab], fp)
         fp.close()
 
 
@@ -169,12 +165,12 @@ if __name__ == "__main__":
     parser.add_argument("-e", "--num-epochs",
                         dest="num_epochs",
                         help="Number of epochs.",
-                        default=5, type=int)
+                        default=20, type=int)
 
     parser.add_argument("-b", "--batch-size",
                         dest="batch_size",
                         help="The batch size.",
-                        default=4, type=int)
+                        default=8, type=int)
 
     parser.add_argument("-l", "--learn-rate",
                         dest="lr",

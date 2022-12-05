@@ -1,0 +1,2 @@
+This archive contains the Python file LightAI.py, which finds a solution, a PDF write up, and this Readme.
+To run LightAI.py, move the desired input sequence into the same directory, rename it to INPUT.txt, and then run the command python LightAI.py
