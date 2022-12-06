@@ -1,3 +1,7 @@
+# Amazon Sentiment Analysis
+
+An amazon scraper, data cleaner, and transformer sentiment model, intended to systematically test Google Translate. The rest of this README is from the repository I cloned originally, which contained code for a transformer model I adapted to my own uses.
+
 # former
 
 Simple transformer implementation from scratch in pytorch. See http://peterbloem.nl/blog/transformers for an in-depth 
